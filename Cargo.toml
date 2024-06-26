@@ -1,0 +1,19 @@
+[package]
+name = "crisp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gtk = { version = "0.8", package = "gtk4", features = ["v4_12"] }
+gtk4-layer-shell = "0.3.0"
+parking_lot = "0.12.3"
+rune = "0.13.2"
+
+[profile.release]
+overflow-checks = true
+incremental = true
+codegen-units = 1
+panic = "abort"
+opt-level = "s"
+strip = true
+lto = "fat"

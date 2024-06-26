@@ -11,17 +11,19 @@ All functions are high-level abstractions of real GTK4 functions, which is inten
 ## Functions and Documentation
 TBD
 
-## Current Features
-- Supported widgets as of now are: Labels and Boxes.
+## State
+- Supported widgets as of now are: Labels, Separators, Boxes and Buttons.
 - Swapping widget focus is working.
+- Detecting when the mouse enters/leave a widget is working.
+- Detecting button presses is working.
+- Registering for events in Rune is working.
+- Getting the output of a command as a string is working.
 - Modifying the window properties (like being resizable, default size, etc) is working.
+- Making your window a layer-shell is working.
 
 ## Planned Features
-- Getting the output of a shell-command and returning it as a string.
 - Adding support for a lot more widgets.
-- Adding support for modifying widget properties.
-- Adding support for making your window a layer-shell, or have it displayed as a regular window.
-- Adding support for loading a custom stylesheet via the `STYLESHEET="relative_css_path"` environment variable.
+- Adding support for executing a command without getting the output.
 
 ## Contribution
 Pull Requests are more than welcome, as long as they follow the current code-quality and style.

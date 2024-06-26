@@ -1,0 +1,67 @@
+/// This function is called before `main` and is intended for
+/// initializing layer shells, as they can't be safely initialized
+/// inside of `main`.
+/// You may not add any widgets from here, as there are no widgets
+/// ready from this function.
+pub fn on_ui_pre_init() {
+    println("on_ui_pre_init called!");
+
+    // Uncomment the lines below to have a status bar-like window.
+    // LayerShell::init_layer_shell(true);
+    // LayerShell::set_layer("Top");
+    // LayerShell::set_anchors(false, false, true, false);
+}
+
+/// Called as the UI is ready to be modified and can be populated.
+/// The default widget is a vertical box widget named
+/// `root`.
+pub fn main() {
+    GTK::set_window_title(Some("Example Window"));
+    GTK::set_window_resizable(false);
+    GTK::set_window_default_width(300);
+    GTK::set_window_default_height(300);
+
+    let example_struct = ExampleWindow { count: 0.0 };
+    ExampleWindow::init_window(example_struct);
+
+    // Register for events. If you don't want them, return None.
+    Some((ExampleWindow::on_tick, example_struct, ExampleWindow::on_button_click, ExampleWindow::on_enter_widget, ExampleWindow::on_exit_widget))
+}
+
+/// Defines the tick-rate for the background loop.
+pub fn get_tick_rate() {
+    500
+}
+
+/// An example structure we'll be using to store variables and
+/// handle event callbacks.
+struct ExampleWindow {
+    count,
+}
+
+impl ExampleWindow {
+    /// Called on window initialization, and adds all of the widgets.
+    pub fn init_window(self) {
+        let count = self.count;
+        GTK::add_label("Count", `${count}`);
+    }
+
+    /// Increments `self.count` every `n` milliseconds, specified in `get_tick_rate`.
+    /// It also updates the `Count` label with the current count.
+    pub fn on_tick(self) {
+        self.count += 0.5;
+        GTK::set_focused_widget("Count");
+
+        let count = self.count;
+        GTK::update_label_text(`Count: ${count}`);
+    }
+
+    /// Called when a button has been pressed.
+    pub fn on_button_click(self, identifier) { }
+
+    /// Called when the cursor has entered a widget.
+    pub fn on_enter_widget(self, identifier) { }
+
+    /// Called when the cursor has exited a widget.
+    pub fn on_exit_widget(self, identifier) { }
+}
