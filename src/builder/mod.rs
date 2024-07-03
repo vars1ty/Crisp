@@ -61,8 +61,6 @@ impl UIBuilder {
 
             let mut gtk_module =
                 Module::with_crate("GTK").expect("[ERROR] Failed building GTK crate!");
-            let mut system_module =
-                Module::with_crate("System").expect("[ERROR] Failed building System crate!");
             gtk_module
                 .function("set_window_title", move |title: Option<String>| {
                     application_window.0.set_title(title.as_deref());
@@ -403,10 +401,25 @@ impl UIBuilder {
                 .build()
                 .unwrap();
 
+            gtk_module
+                .function("set_valign", |align: String| {
+                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                        .expect("[ERROR] Couldn't get the current widget!")
+                        .0
+                        .set_valign(match align.as_str() {
+                            "Start" => gtk::Align::Start,
+                            "Center" => gtk::Align::Center,
+                            "End" => gtk::Align::End,
+                            "Fill" => gtk::Align::Fill,
+                            _ => panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!"),
+                        });
+                })
+                .build()
+                .unwrap();
+
             script_engine.assign_ui_modules(vec![
                 gtk_module,
                 LayerShellCrate::build(application_window, script_relative_path),
-                system_module,
                 FileSystemCrate::build(),
             ]);
             Self::compile_source(Arc::clone(&script_engine), &script_data);
