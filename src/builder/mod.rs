@@ -379,6 +379,15 @@ impl UIBuilder {
                 .unwrap();
 
             gtk_module
+                .function("update_button_text", move |new_text: String| {
+                    self.try_get_current_gtk_widget_as::<gtk::Button>(&self.user_widgets.lock())
+                        .expect("[ERROR] The widget you are trying to access is not a button!")
+                        .set_label(&new_text)
+                })
+                .build()
+                .unwrap();
+
+            gtk_module
                 .function("set_halign", |align: String| {
                     self.get_current_gtk_widget(&self.user_widgets.lock())
                         .expect("[ERROR] Couldn't get the current widget!")
@@ -387,7 +396,8 @@ impl UIBuilder {
                             "Start" => gtk::Align::Start,
                             "Center" => gtk::Align::Center,
                             "End" => gtk::Align::End,
-                            _ => panic!("[ERROR] Invalid alignment, use Start, Center or End!"),
+                            "Fill" => gtk::Align::Fill,
+                            _ => panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!"),
                         });
                 })
                 .build()
