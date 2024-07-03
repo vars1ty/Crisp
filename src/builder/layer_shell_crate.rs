@@ -14,26 +14,24 @@ impl LayerShellCrate {
         let mut built_crate = Module::with_crate("LayerShell")
             .expect("[ERROR] Failed building the LayerShell crate!");
         built_crate
-            .function("init_layer_shell", move |enable_exclusive_zone| {
-                application_window.0.init_layer_shell();
-                application_window.0.set_namespace(script_relative_path);
-                if enable_exclusive_zone {
-                    application_window.0.auto_exclusive_zone_enable();
-                }
-            })
-            .build()
-            .unwrap();
+            .function(
+                "init_layer_shell",
+                move |enable_exclusive_zone, layer: String| {
+                    application_window.0.init_layer_shell();
+                    application_window.0.set_namespace(script_relative_path);
+                    if enable_exclusive_zone {
+                        application_window.0.auto_exclusive_zone_enable();
+                    }
 
-        built_crate
-            .function("set_layer", |layer: String| match layer.as_str() {
-                "Top" => application_window.0.set_layer(Layer::Top),
-                "Bottom" => application_window.0.set_layer(Layer::Bottom),
-                "Overlay" => application_window.0.set_layer(Layer::Overlay),
-                "Background" => application_window.0.set_layer(Layer::Background),
-                _ => panic!(
-                    "[ERROR] Invalid layer, valid values: Top, Bottom, Overlay and Background!"
-                ),
-            })
+                    match layer.as_str() {
+                        "Top" => application_window.0.set_layer(Layer::Top),
+                        "Bottom" => application_window.0.set_layer(Layer::Bottom),
+                        "Overlay" => application_window.0.set_layer(Layer::Overlay),
+                        "Background" => application_window.0.set_layer(Layer::Background),
+                        _ => panic!("[ERROR] Invalid layer value!"),
+                    }
+                },
+            )
             .build()
             .unwrap();
 

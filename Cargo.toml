@@ -7,6 +7,7 @@ edition = "2021"
 gtk = { version = "0.8", package = "gtk4", features = ["v4_12"] }
 gtk4-layer-shell = "0.3.0"
 parking_lot = "0.12.3"
+ahash = "0.8.11"
 rune = "0.13.2"
 
 [profile.release]

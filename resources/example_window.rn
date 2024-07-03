@@ -7,8 +7,7 @@ pub fn on_ui_pre_init() {
     println("on_ui_pre_init called!");
 
     // Uncomment the lines below to have a status bar-like window.
-    // LayerShell::init_layer_shell(true);
-    // LayerShell::set_layer("Top");
+    // LayerShell::init_layer_shell(true, "Top");
     // LayerShell::set_anchors(false, false, true, false);
 }
 
@@ -22,15 +21,16 @@ pub fn main() {
     GTK::set_window_default_height(300);
 
     let example_struct = ExampleWindow { count: 0.0 };
-    ExampleWindow::init_window(example_struct);
+    example_struct.init_window();
 
-    // Register for events. If you don't want them, return None.
-    Some((ExampleWindow::on_tick, example_struct, ExampleWindow::on_button_click, ExampleWindow::on_enter_widget, ExampleWindow::on_exit_widget))
-}
+    // Background loops to register. Each loop function is fed the
+    // example_struct variable automatically.
+    // Format: (Function, RepeatMilliseconds)
+    let background_loops = [(ExampleWindow::on_tick, 500)];
 
-/// Defines the tick-rate for the background loop.
-pub fn get_tick_rate() {
-    500
+    // Register for events and loops. If you don't want any of this, return None.
+    // on_enter_widget and on_exit_widget has to be in its own tuple.
+    Some(new_runtime_config(example_struct, ExampleWindow::on_button_click, (ExampleWindow::on_enter_widget, ExampleWindow::on_exit_widget), background_loops))
 }
 
 /// An example structure we'll be using to store variables and
@@ -43,17 +43,26 @@ impl ExampleWindow {
     /// Called on window initialization, and adds all of the widgets.
     pub fn init_window(self) {
         let count = self.count;
+
+        // We want the widgets on the left side, not at the center
+        // which is the default.
+        GTK::add_horizontal_box("Main Box", 5);
+        GTK::set_focused_widget("Main Box");
+        GTK::set_halign("Start");
+
+        // Now add the label.
         GTK::add_label("Count", `${count}`);
     }
 
-    /// Increments `self.count` every `n` milliseconds, specified in `get_tick_rate`.
-    /// It also updates the `Count` label with the current count.
+    /// Increments `self.count` every `500` milliseconds and
+    /// updates the `Count` label text.
     pub fn on_tick(self) {
         self.count += 0.5;
         GTK::set_focused_widget("Count");
 
         let count = self.count;
-        GTK::update_label_text(`Count: ${count}`);
+        let count_i32 = std::ftoi(self.count);
+        GTK::update_label_text(`Count (f32): ${count}, Count (i32): ${count_i32}`);
     }
 
     /// Called when a button has been pressed.

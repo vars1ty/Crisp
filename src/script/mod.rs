@@ -1,7 +1,8 @@
+use crate::{builder::stdext_crate::STDExtCrate, utils::SystemUtils};
 use rune::{
-    runtime::{Function, Value},
-    termcolor::{ColorChoice, StandardStream},
-    Context, Diagnostics, Module, Source, Sources, Vm,
+    runtime::{Function, SyncFunction, Value},
+    termcolor::*,
+    *,
 };
 use std::{
     cell::{OnceCell, RefCell},
@@ -9,12 +10,10 @@ use std::{
 };
 
 /// Data collected from the `main` function return data.
+#[derive(Any)]
 struct MainReturnData {
-    /// `on_tick` Rune function.
-    pub on_tick_rfn: Function,
-
     /// Single argument to be passed into every event function, such as a structure instance.
-    pub event_arg: Value,
+    pub event_arg: &'static SafeValue,
 
     /// `on_button_click` Rune function.
     pub on_button_click_rfn: Function,
@@ -24,6 +23,11 @@ struct MainReturnData {
 
     /// `on_exit_widget` Rune function.
     pub on_exit_widget_rfn: Function,
+
+    /// Background loops registered.
+    /// 0 -> The function to be called.
+    /// 1 -> How often (in milliseconds) the function should be called.
+    pub background_loops: &'static Vec<(SyncFunction, u64)>,
 }
 
 /// Script Engine active for this particular instance.
@@ -37,7 +41,16 @@ pub struct ScriptEngine {
 
     /// Data collected from the `main` function return data.
     main_return_data: OnceCell<MainReturnData>,
+
+    /// System Utils instance.
+    system_utils: Arc<SystemUtils>,
 }
+
+/// Hacked "thread-safe" `Value` wrapper.
+#[derive(Debug, Any)]
+struct SafeValue(pub Value);
+unsafe impl Send for SafeValue {}
+unsafe impl Sync for SafeValue {}
 
 unsafe impl Send for ScriptEngine {}
 unsafe impl Sync for ScriptEngine {}
@@ -47,6 +60,29 @@ impl ScriptEngine {
     /// source.
     pub fn run_from_input(&self, input: &str) -> rune::support::Result<()> {
         let mut context = Context::with_default_modules()?;
+        let mut module = Module::new();
+        module.ty::<MainReturnData>()?;
+        module
+            .function(
+                "new_runtime_config",
+                |event_arg,
+                 on_button_click_rfn,
+                 on_enter_exit_widget_rfn: (Function, Function),
+                 background_loops| {
+                    MainReturnData {
+                        event_arg: Box::leak(Box::new(SafeValue(event_arg))),
+                        on_button_click_rfn,
+                        on_enter_widget_rfn: on_enter_exit_widget_rfn.0,
+                        on_exit_widget_rfn: on_enter_exit_widget_rfn.1,
+                        background_loops: Box::leak(Box::new(background_loops)),
+                    }
+                },
+            )
+            .build()
+            .unwrap();
+        context.install(STDExtCrate::build(Arc::clone(&self.system_utils)))?;
+        context.install(module)?;
+
         for module in self
             .ui_modules
             .get()
@@ -84,21 +120,17 @@ impl ScriptEngine {
 
         let result = vm.call(["main"], ())?;
 
-        if let Some((
-            on_tick_rfn,
-            event_arg,
-            on_button_click_rfn,
-            on_enter_widget_rfn,
-            on_exit_widget_rfn,
-        )) = rune::from_value::<Option<(Function, Value, Function, Function, Function)>>(result)?
-        {
-            self.main_return_data.get_or_init(|| MainReturnData {
-                on_tick_rfn,
-                event_arg,
-                on_button_click_rfn,
-                on_enter_widget_rfn,
-                on_exit_widget_rfn,
-            });
+        if let Some(data) = rune::from_value::<Option<MainReturnData>>(result)? {
+            for (func, time) in data.background_loops {
+                gtk::glib::timeout_add(std::time::Duration::from_millis(*time), move || {
+                    func.call::<_, ()>((&data.event_arg.0,))
+                        .into_result()
+                        .expect("[ERROR] Failed calling background loop!");
+                    gtk::glib::ControlFlow::Continue
+                });
+            }
+
+            self.main_return_data.get_or_init(|| data);
         }
 
         Ok(())
@@ -122,35 +154,12 @@ impl ScriptEngine {
         Ok(())
     }
 
-    /// Gets the reference to `self.rune_vm`.
-    pub fn get_vm(&self) -> &RefCell<Vm> {
-        self.rune_vm
-            .get()
-            .expect("[ERROR] No Rune Virtual Machine has been stored!")
-    }
-
     pub fn assign_ui_modules(&self, modules: Vec<Module>) {
         self.ui_modules.get_or_init(|| modules);
     }
 
-    /// Calls the `on_tick` function on the active VM if present.
-    pub fn call_tick(&self) -> bool {
-        let Some(main_return_data) = self.main_return_data.get() else {
-            eprintln!(
-                "[WARN] No event functions were stored at startup, skipping advanced events!"
-            );
-            return false;
-        };
-
-        main_return_data
-            .on_tick_rfn
-            .call::<_, ()>((&main_return_data.event_arg,))
-            .into_result()
-            .is_ok()
-    }
-
     /// Calls the `on_enter_widget` or `on_exit_widget` function on the VM if present.
-    pub fn call_enter_exit(&self, identifier: String, entered: bool) -> bool {
+    pub fn call_enter_exit(&self, identifier: &str, entered: bool) -> bool {
         let Some(main_return_data) = self.main_return_data.get() else {
             eprintln!(
                 "[WARN] No event functions were stored at startup, skipping advanced events!"
@@ -161,20 +170,20 @@ impl ScriptEngine {
         if entered {
             return main_return_data
                 .on_enter_widget_rfn
-                .call::<_, ()>((&main_return_data.event_arg, identifier))
+                .call::<_, ()>((&main_return_data.event_arg.0, identifier))
                 .into_result()
                 .is_ok();
         }
 
         main_return_data
             .on_exit_widget_rfn
-            .call::<_, ()>((&main_return_data.event_arg, identifier))
+            .call::<_, ()>((&main_return_data.event_arg.0, identifier))
             .into_result()
             .is_ok()
     }
 
     /// Calls the `on_tick` function on the active VM if present.
-    pub fn call_on_button_click(&self, identifier: String) {
+    pub fn call_on_button_click(&self, identifier: &str) {
         let Some(main_return_data) = self.main_return_data.get() else {
             eprintln!(
                 "[WARN] No event functions were stored at startup, skipping advanced events!"
@@ -184,29 +193,8 @@ impl ScriptEngine {
 
         main_return_data
             .on_button_click_rfn
-            .call::<_, ()>((&main_return_data.event_arg, identifier))
+            .call::<_, ()>((&main_return_data.event_arg.0, identifier))
             .into_result()
             .expect("[ERROR] VM failed to call on_button_click!");
-    }
-
-    /// Gets the tick-rate in milliseconds for how often `on_tick` should be called.
-    /// Default value is **100**ms.
-    pub fn get_tick_rate(&self) -> u64 {
-        let Ok(vm) = self.get_vm().try_borrow() else {
-            eprintln!("[ERROR] VM is already being borrowed, cannot borrow for now. Using 100ms as the tick-rate!");
-            return 100;
-        };
-
-        let Ok(function) = vm.lookup_function(["get_tick_rate"]) else {
-            eprintln!("[ERROR] VM has no get_tick_rate (u64) function, or it's not visible. Using 100ms as the tick-rate!");
-            return 100;
-        };
-
-        rune::from_value(
-            function
-                .call(())
-                .expect("[ERROR] VM failed to call get_tick_rate!"),
-        )
-        .expect("[ERROR] VM failed reading get_tick_rate return value as u64!")
     }
 }

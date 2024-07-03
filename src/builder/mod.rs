@@ -1,7 +1,8 @@
 mod fs_crate;
 mod layer_shell_crate;
+pub mod stdext_crate;
 
-use crate::{config::Config, errors::BuilderErrors, script::ScriptEngine, utils::SystemUtils};
+use crate::{config::Config, script::ScriptEngine, utils::SystemUtils};
 use fs_crate::FileSystemCrate;
 use gtk::{gdk::Display, prelude::*, Application, ApplicationWindow, CssProvider, Widget};
 use layer_shell_crate::LayerShellCrate;
@@ -44,7 +45,7 @@ impl UIBuilder {
     pub fn build_modules(&'static self, script_engine: Arc<ScriptEngine>) {
         let script_engine_clone = Arc::clone(&script_engine);
         self.script_engine.get_or_init(|| script_engine_clone);
-        let (script_relative_path, _, script_data) = Config::get_script_information();
+        let (script_relative_path, script_data) = Config::get_script_information();
         println!("[INFO] Application ID / Namespace will be set to: \"{script_relative_path}\"");
         let app = Application::builder()
             .application_id(script_relative_path.to_owned())
@@ -100,14 +101,14 @@ impl UIBuilder {
                 .unwrap();
 
             gtk_module
-                .function("set_focused_widget", move |identifier| {
+                .function("set_focused_widget", move |identifier: String| {
                     self.set_focused_widget(identifier)
                 })
                 .build()
                 .unwrap();
 
             gtk_module
-                .function("add_vertical_box", |identifier, spacing| {
+                .function("add_vertical_box", |identifier: String, spacing| {
                     self.add_widget(
                         identifier,
                         gtk::Box::new(gtk::Orientation::Vertical, spacing),
@@ -117,7 +118,7 @@ impl UIBuilder {
                 .unwrap();
 
             gtk_module
-                .function("add_horizontal_box", |identifier, spacing| {
+                .function("add_horizontal_box", |identifier: String, spacing| {
                     self.add_widget(
                         identifier,
                         gtk::Box::new(gtk::Orientation::Horizontal, spacing),
@@ -127,7 +128,7 @@ impl UIBuilder {
                 .unwrap();
 
             gtk_module
-                .function("add_label", |identifier, text: String| {
+                .function("add_label", |identifier: String, text: String| {
                     self.add_widget(identifier, gtk::Label::new(Some(&text)))
                 })
                 .build()
@@ -331,7 +332,7 @@ impl UIBuilder {
                     let identifier_clone = identifier.to_owned();
 
                     button.connect_clicked(move |_| {
-                        script_engine_clone.call_on_button_click(identifier_clone.to_owned());
+                        script_engine_clone.call_on_button_click(&identifier_clone);
                     });
                     self.add_widget(identifier, button);
                 })
@@ -377,16 +378,17 @@ impl UIBuilder {
                 .build()
                 .unwrap();
 
-            system_module
-                .function("sleep", |ms| {
-                    std::thread::sleep(std::time::Duration::from_millis(ms));
-                })
-                .build()
-                .unwrap();
-
-            system_module
-                .function("get_command_output", |command| {
-                    SystemUtils::execute(command)
+            gtk_module
+                .function("set_halign", |align: String| {
+                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                        .expect("[ERROR] Couldn't get the current widget!")
+                        .0
+                        .set_halign(match align.as_str() {
+                            "Start" => gtk::Align::Start,
+                            "Center" => gtk::Align::Center,
+                            "End" => gtk::Align::End,
+                            _ => panic!("[ERROR] Invalid alignment, use Start, Center or End!"),
+                        });
                 })
                 .build()
                 .unwrap();
@@ -461,18 +463,15 @@ impl UIBuilder {
         }
 
         let downcast = self.try_get_current_gtk_widget_as::<gtk::Box>(&user_widgets);
-        if let Ok(box_widget) = downcast {
+        if let Some(box_widget) = downcast {
             self.connect_enter_exit_events(identifier.to_owned(), &widget);
             box_widget.append(&widget);
-            user_widgets.insert(identifier.to_owned(), SafeGTKWidget(widget.into()));
+            user_widgets.insert(identifier, SafeGTKWidget(widget.into()));
             drop(user_widgets); // Release Mutex lock.
             return;
         }
 
-        eprintln!(
-            "[ERROR] Failed casting widget, error: {:?}",
-            downcast.unwrap_err()
-        );
+        eprintln!("[ERROR] Failed casting widget!");
     }
 
     /// Connects the Enter and Exit events for a widget, into Rune.
@@ -491,13 +490,13 @@ impl UIBuilder {
         let script_engine_clone = Arc::clone(&script_engine);
         let motion_controller = gtk::EventControllerMotion::new();
         motion_controller.connect_enter(move |_, _, _| {
-            script_engine_clone.call_enter_exit(identifier_clone.to_owned(), true);
+            script_engine_clone.call_enter_exit(&identifier_clone, true);
         });
 
         let identifier_clone = identifier.to_owned();
         let script_engine_clone = Arc::clone(&script_engine);
         motion_controller.connect_leave(move |_| {
-            script_engine_clone.call_enter_exit(identifier_clone.to_owned(), false);
+            script_engine_clone.call_enter_exit(&identifier_clone, false);
         });
         widget.add_controller(motion_controller);
     }
@@ -531,42 +530,37 @@ impl UIBuilder {
     /// let widget = try_get_current_gtk_widget_as::<gtk::Box>(&self.user_widgets.lock())
     ///     .expect("Error while trying to get the current widget!")
     ///     .expect("Error while trying to cast widget as gtk::Box!");
-    /// ````
+    /// ```
     fn try_get_current_gtk_widget_as<'a, W: gtk::prelude::IsA<gtk::Widget>>(
         &'a self,
         user_widgets: &'a HashMap<String, SafeGTKWidget>,
-    ) -> Result<&W, BuilderErrors> {
+    ) -> Option<&W> {
         let Some(current_user_widget) = self.current_user_widget.try_lock() else {
-            return Err(BuilderErrors::GetCurrentWidgetError(
-                "current_user_widget is locked!",
-            ));
+            eprintln!("[ERROR] current_user_widget is locked!");
+            return None;
         };
 
         let Some(current_user_widget) = current_user_widget.as_ref() else {
-            return Err(BuilderErrors::GetCurrentWidgetError(
-                "current_user_widget is None, there is no focused widget!",
-            ));
+            eprintln!("[ERROR] current_user_widget is None, there is no focused widget!");
+            return None;
         };
 
         if !user_widgets.contains_key(current_user_widget) {
-            return Err(BuilderErrors::GetCurrentWidgetError(
-                "There is no widget with the specified name!",
-            ));
+            eprintln!("[ERROR] There is no widget with the specified name!");
+            return None;
         }
 
         let Some(current_user_widget) = user_widgets.get(current_user_widget) else {
-            return Err(BuilderErrors::GetCurrentWidgetError(
-                "Couldn't locate any widgets with the name specified in current_user_widget!",
-            ));
+            eprintln!("[ERROR] Couldn't locate any widgets with the name specified in current_user_widget!");
+            return None;
         };
 
         let Some(casted_widget) = current_user_widget.0.downcast_ref::<W>() else {
-            return Err(BuilderErrors::GetCurrentWidgetError(
-                "Failed casting widget to the desired type!",
-            ));
+            eprintln!("[ERROR] Failed casting widget to the desired type!");
+            return None;
         };
 
-        Ok(casted_widget)
+        Some(casted_widget)
     }
 
     /// Checks if the current widget can be casted to the desired widget type.
@@ -578,7 +572,7 @@ impl UIBuilder {
         };
 
         self.try_get_current_gtk_widget_as::<W>(&user_widgets)
-            .is_ok()
+            .is_some()
     }
 
     /// Gets the current GTK Widget wrapped inside of `SafeGTKWidget`.
@@ -597,26 +591,12 @@ impl UIBuilder {
     /// Checks if the current widget can hold child widgets.
     fn can_add_widgets_to_current(&self) -> bool {
         self.can_cast_current_widget_to::<gtk::Box>()
-            || self.can_cast_current_widget_to::<gtk::ListBox>()
     }
 
     /// Compiles the `script_data` source.
     fn compile_source(script_engine: Arc<ScriptEngine>, script_data: &str) {
-        let script_engine_clone = Arc::clone(&script_engine);
         script_engine
             .run_from_input(script_data)
             .expect("[ERROR] Failed building Script Engine!");
-
-        gtk::glib::timeout_add(
-            std::time::Duration::from_millis(script_engine.get_tick_rate()),
-            move || {
-                if script_engine_clone.call_tick() {
-                    gtk::glib::ControlFlow::Continue
-                } else {
-                    // Couldn't call tick, don't continue.
-                    gtk::glib::ControlFlow::Break
-                }
-            },
-        );
     }
 }
