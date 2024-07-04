@@ -1,0 +1,62 @@
+pub fn main() {
+    GTK::set_window_title(Some("Lightrod"));
+    GTK::set_window_resizable(false);
+    GTK::set_window_default_width(3440);
+
+    let lightrod = Lightrod {
+        horizontal_box: "HBox",
+        can_update_date: true,
+    };
+    
+    lightrod.add_widgets();
+    let background_loops = [(Lightrod::on_tick, 200)];
+    Some(new_runtime_config(lightrod, Lightrod::on_button_click, (Lightrod::on_enter_widget, Lightrod::on_exit_widget), background_loops))
+}
+
+/// Setup the layer-shell in a centered layout.
+pub fn on_ui_pre_init() {
+    LayerShell::init_layer_shell(true, "Top");
+    LayerShell::set_anchors(false, false, true, false);
+}
+
+pub struct Lightrod {
+    /// Horizontal Box widget name.
+    horizontal_box,
+
+    /// If true, the date widget is allowed to be updated.
+    /// If false, it's because the cursor is hovering over it.
+    can_update_date,
+}
+
+impl Lightrod {
+    pub fn on_tick(self) {
+        
+    }
+
+    pub fn on_button_click(self, identifier) {}
+
+    pub fn on_enter_widget(self, identifier) {
+    }
+
+    pub fn on_exit_widget(self, identifier) {
+    }
+
+    fn add_widgets(self) {
+        GTK::add_horizontal_slider("Test", 0.0, 10.0, 1.0);
+        GTK::set_focused_widget("Test");
+        GTK::set_size_request(0, 10);
+    }
+
+    fn update_components(self) {
+        println("TODO");
+    }
+
+    /// Adds a new "separator", aka a 1-pixel wide box.
+    fn add_separator(self, name) {
+        GTK::add_horizontal_box(name.clone(), 0);
+        GTK::set_focused_widget(name.clone());
+        GTK::set_gtk_widget_name(name);
+        GTK::set_size_request(1, 0);
+        GTK::set_focused_widget(self.horizontal_box.clone());
+    }
+}

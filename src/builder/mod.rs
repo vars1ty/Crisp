@@ -2,7 +2,7 @@ mod fs_crate;
 mod layer_shell_crate;
 pub mod stdext_crate;
 
-use crate::{config::Config, script::ScriptEngine, utils::SystemUtils};
+use crate::{config::Config, script::ScriptEngine};
 use fs_crate::FileSystemCrate;
 use gtk::{gdk::Display, prelude::*, Application, ApplicationWindow, CssProvider, Widget};
 use layer_shell_crate::LayerShellCrate;
@@ -223,6 +223,16 @@ impl UIBuilder {
                 .unwrap();
 
             gtk_module
+                .function("set_width_request", |width| {
+                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                        .expect("[ERROR] Couldn't get the current widget!")
+                        .0
+                        .set_width_request(width)
+                })
+                .build()
+                .unwrap();
+
+            gtk_module
                 .function("get_height", || {
                     self.get_current_gtk_widget(&self.user_widgets.lock())
                         .expect("[ERROR] Couldn't get the current widget!")
@@ -395,7 +405,9 @@ impl UIBuilder {
                             "Center" => gtk::Align::Center,
                             "End" => gtk::Align::End,
                             "Fill" => gtk::Align::Fill,
-                            _ => panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!"),
+                            _ => {
+                                panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!")
+                            }
                         });
                 })
                 .build()
@@ -411,8 +423,48 @@ impl UIBuilder {
                             "Center" => gtk::Align::Center,
                             "End" => gtk::Align::End,
                             "Fill" => gtk::Align::Fill,
-                            _ => panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!"),
+                            _ => {
+                                panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!")
+                            }
                         });
+                })
+                .build()
+                .unwrap();
+
+            gtk_module
+                .function("add_vertical_slider", |identifier, min, max, step| {
+                    self.add_widget(
+                        identifier,
+                        gtk::Scale::with_range(gtk::Orientation::Vertical, min, max, step),
+                    )
+                })
+                .build()
+                .unwrap();
+
+            gtk_module
+                .function("add_horizontal_slider", |identifier, min, max, step| {
+                    self.add_widget(
+                        identifier,
+                        gtk::Scale::with_range(gtk::Orientation::Horizontal, min, max, step),
+                    )
+                })
+                .build()
+                .unwrap();
+
+            gtk_module
+                .function("get_slider_value", move || {
+                    self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.lock())
+                        .expect("[ERROR] The widget you are trying to access is not a slider!")
+                        .value()
+                })
+                .build()
+                .unwrap();
+
+            gtk_module
+                .function("set_slider_value", move |value| {
+                    self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.lock())
+                        .expect("[ERROR] The widget you are trying to access is not a slider!")
+                        .set_value(value)
                 })
                 .build()
                 .unwrap();
