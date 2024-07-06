@@ -1,5 +1,5 @@
-use crate::utils::SystemUtils;
-use rune::{Module, Value};
+use crate::{script::ScriptEngine, utils::SystemUtils};
+use rune::{runtime::Function, Module, Value};
 use std::sync::Arc;
 
 /// Rune module for adding new "standard" functions.
@@ -7,7 +7,7 @@ pub struct STDExtCrate;
 
 impl STDExtCrate {
     /// Builds the Layer Shell Module.
-    pub fn build(system_utils: Arc<SystemUtils>) -> Module {
+    pub fn build(system_utils: Arc<SystemUtils>, script_engine: Arc<ScriptEngine>) -> Module {
         let mut built_crate =
             Module::with_crate("std").expect("[ERROR] Failed building the std crate!");
         built_crate
@@ -51,6 +51,11 @@ impl STDExtCrate {
             .unwrap();
 
         built_crate
+            .function("stoi", |s: String| s.parse::<i32>())
+            .build()
+            .unwrap();
+
+        built_crate
             .function("get_command_output", |cmd| SystemUtils::execute(cmd, true))
             .build()
             .unwrap();
@@ -78,8 +83,29 @@ impl STDExtCrate {
                     return None;
                 };
 
-                reader.get(&identifier).cloned() // Not a fan.
+                reader
+                    .get(&identifier)
+                    .and_then(|res| res.try_read().map(|res| res.to_owned()))
             })
+            .build()
+            .unwrap();
+
+        built_crate
+            .function(
+                "start_background_loop",
+                move |identifier: String, loop_function: Function, time| {
+                    let loop_function_dbg_string = format!("{loop_function:?}");
+                    let loop_function = loop_function
+                        .into_sync()
+                        .into_result()
+                        .expect("[ERROR] Function cannot be turned into a SyncFunction!");
+                    script_engine.start_background_loop(
+                        format!("{identifier} [{loop_function_dbg_string}]"),
+                        loop_function,
+                        time,
+                    );
+                },
+            )
             .build()
             .unwrap();
 

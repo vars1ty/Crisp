@@ -11,7 +11,9 @@ use std::{
 pub struct SystemUtils {
     /// All the listening command outputs.
     /// Each key is the unique identifier, whereas the value is the last-read line.
-    listening_command_outputs: Arc<RwLock<AHashMap<String, String>>>,
+    /// Each value is wrapped inside RwLock<String> so that it's easier to use it in multiple
+    /// background loops, without blocking the entire HashMap when writing to a single key.
+    listening_command_outputs: Arc<RwLock<AHashMap<String, RwLock<String>>>>,
 }
 
 impl SystemUtils {
@@ -23,17 +25,26 @@ impl SystemUtils {
             return None;
         }
 
-        let cmd = Command::new("sh")
-            .args(["-c", &cmd])
-            .output()
-            .unwrap()
-            .stdout;
+        let command = Command::new("sh").args(["-c", &cmd]).output();
+        if command.is_err() {
+            eprintln!(
+                "[ERROR] Failed spawning \"sh -c {cmd}\", error: {}",
+                command.unwrap_err()
+            );
+            return None;
+        }
 
         if !capture_output {
             return None;
         }
 
-        String::from_utf8(cmd).ok().map(|mut result| {
+        String::from_utf8(
+            command
+                .expect("[FATAL] Safety if-condition removed for process spawning?")
+                .stdout,
+        )
+        .ok()
+        .map(|mut result| {
             // Remove trailing \n.
             result.pop();
             result
@@ -56,36 +67,57 @@ impl SystemUtils {
             listening_command_outputs
                 .try_write()
                 .expect("[ERROR] listening_command_outputs is locked!")
-                .insert(identifier.to_owned(), String::default());
+                .insert(identifier.to_owned(), RwLock::default());
 
-            let mut child = Command::new("sh")
+            let child = Command::new("sh")
                 .args(["-c", &cmd])
                 .stdout(Stdio::piped())
-                .spawn()
-                .expect("[ERROR] Failed starting process!");
+                .spawn();
+            if child.is_err() {
+                eprintln!(
+                    "[ERROR] Failed spawning \"sh -c {cmd}\", error: {}",
+                    child.unwrap_err()
+                );
+                return;
+            }
 
-            let out = child
-                .stdout
-                .take()
-                .expect("[ERROR] Failed taking child stdout!");
+            let mut child =
+                child.expect("[FATAL] Safety if-condition removed for child process spawning?");
+
+            let Some(out) = child.stdout.take() else {
+                eprintln!("[ERROR] Child process has no stdout to aquire!");
+                return;
+            };
 
             let reader = BufReader::new(out);
             for line in reader.lines() {
-                *listening_command_outputs
-                    .write()
-                    .get_mut(&identifier)
-                    .expect(
-                        "[ERROR] Listening command wasn't inserted, or was unexpectedly removed!",
-                    ) = line.expect("[ERROR] Corrupt UTF-8 String output from process!");
+                let Some(reader) = listening_command_outputs.try_read() else {
+                    eprintln!("[ERROR] listening_command_outputs is locked!");
+                    continue;
+                };
+
+                let Some(command) = reader.get(&identifier) else {
+                    eprintln!("[ERROR] There is no listening command named \"{identifier}\"!");
+                    return;
+                };
+
+                let Some(mut writer) = command.try_write() else {
+                    eprintln!("[ERROR] The listening command \"{identifier}\" cannot be written to as its locked!");
+                    continue;
+                };
+
+                *writer = line.expect("[ERROR] Corrupt UTF-8 String output from process!");
             }
 
-            child.wait().expect("[ERROR] Process wasn't running!");
+            if let Err(error) = child.wait() {
+                eprintln!("[ERROR] Child process exited, error: {error}");
+            }
         });
     }
 
     /// All the listening command outputs.
     /// Each key is the unique identifier, whereas the value is the last-read line.
-    pub fn get_listening_command_outputs(&self) -> Arc<RwLock<AHashMap<String, String>>> {
+    pub fn get_listening_command_outputs(&self) -> Arc<RwLock<AHashMap<String, RwLock<String>>>> {
         Arc::clone(&self.listening_command_outputs)
     }
 }

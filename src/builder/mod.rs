@@ -7,7 +7,7 @@ use fs_crate::FileSystemCrate;
 use gtk::{gdk::Display, prelude::*, Application, ApplicationWindow, CssProvider, Widget};
 use layer_shell_crate::LayerShellCrate;
 use parking_lot::Mutex;
-use rune::Module;
+use rune::{runtime::Function, Module, Value};
 use std::{
     collections::HashMap,
     sync::{Arc, OnceLock},
@@ -332,18 +332,23 @@ impl UIBuilder {
                 .build()
                 .unwrap();
 
-            let script_engine_clone = Arc::clone(&script_engine);
             gtk_module
-                .function("add_button", move |identifier: String, label: String| {
-                    let script_engine_clone = Arc::clone(&script_engine_clone);
-                    let button = gtk::Button::with_label(&label);
-                    let identifier_clone = identifier.to_owned();
+                .function(
+                    "add_button",
+                    move |identifier: String,
+                          label: String,
+                          callback: Function,
+                          callback_arg: Option<Value>| {
+                        let identifier_clone = identifier.to_owned();
+                        let button = gtk::Button::with_label(&label);
 
-                    button.connect_clicked(move |_| {
-                        script_engine_clone.call_on_button_click(&identifier_clone);
-                    });
-                    self.add_widget(identifier, button);
-                })
+                        button.connect_clicked(move |_| {
+                            Self::execute_callback(&identifier_clone, &callback, &callback_arg);
+                        });
+
+                        self.add_widget(identifier, button);
+                    },
+                )
                 .build()
                 .unwrap();
 
@@ -442,12 +447,24 @@ impl UIBuilder {
                 .unwrap();
 
             gtk_module
-                .function("add_horizontal_slider", |identifier, min, max, step| {
-                    self.add_widget(
-                        identifier,
-                        gtk::Scale::with_range(gtk::Orientation::Horizontal, min, max, step),
-                    )
-                })
+                .function(
+                    "add_horizontal_slider",
+                    |identifier: String,
+                     (min, max),
+                     step,
+                     callback: Function,
+                     callback_arg: Option<Value>| {
+                        let widget =
+                            gtk::Scale::with_range(gtk::Orientation::Horizontal, min, max, step);
+                        let identifier_clone = identifier.to_owned();
+
+                        widget.connect_value_changed(move |_| {
+                            Self::execute_callback(&identifier_clone, &callback, &callback_arg);
+                        });
+
+                        self.add_widget(identifier, widget)
+                    },
+                )
                 .build()
                 .unwrap();
 
@@ -517,7 +534,25 @@ impl UIBuilder {
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_USER,
         );
-        println!("[INFO] Custom CSS loaded!");
+    }
+
+    /// Executes the given callback function, with `callback_arg` if set.
+    fn execute_callback(identifier: &str, callback: &Function, callback_arg: &Option<Value>) {
+        let result: Result<(), rune::runtime::VmError> =
+            if let Some(callback_arg) = callback_arg.as_ref() {
+                callback.call::<_, ()>((callback_arg,)).into_result()
+            } else {
+                callback.call::<_, ()>(()).into_result()
+            };
+
+        if let Err(error) = result {
+            // rust-analyzer is fucking terrible and can't format this if it's
+            // all in one string.
+            panic!(
+                "[ERROR] Failed calling callback function of {}",
+                format_args!("\"{identifier}\", error: {error}")
+            );
+        }
     }
 
     /// Adds a new widget to the UI.
@@ -539,6 +574,7 @@ impl UIBuilder {
 
         let downcast = self.try_get_current_gtk_widget_as::<gtk::Box>(&user_widgets);
         if let Some(box_widget) = downcast {
+            widget.set_widget_name(&identifier);
             self.connect_enter_exit_events(identifier.to_owned(), &widget);
             box_widget.append(&widget);
             user_widgets.insert(identifier, SafeGTKWidget(widget.into()));
@@ -620,11 +656,6 @@ impl UIBuilder {
             return None;
         };
 
-        if !user_widgets.contains_key(current_user_widget) {
-            eprintln!("[ERROR] There is no widget with the specified name!");
-            return None;
-        }
-
         let Some(current_user_widget) = user_widgets.get(current_user_widget) else {
             eprintln!("[ERROR] Couldn't locate any widgets with the name specified in current_user_widget!");
             return None;
@@ -671,7 +702,7 @@ impl UIBuilder {
     /// Compiles the `script_data` source.
     fn compile_source(script_engine: Arc<ScriptEngine>, script_data: &str) {
         script_engine
-            .run_from_input(script_data)
+            .run_from_input(script_data, Arc::clone(&script_engine))
             .expect("[ERROR] Failed building Script Engine!");
     }
 }

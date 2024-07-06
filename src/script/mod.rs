@@ -6,7 +6,7 @@ use rune::{
 };
 use std::{
     cell::{OnceCell, RefCell},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 /// Data collected from the `main` function return data.
@@ -15,19 +15,11 @@ struct MainReturnData {
     /// Single argument to be passed into every event function, such as a structure instance.
     pub event_arg: &'static SafeValue,
 
-    /// `on_button_click` Rune function.
-    pub on_button_click_rfn: Function,
-
     /// `on_enter_widget` Rune function.
-    pub on_enter_widget_rfn: Function,
+    pub on_enter_widget_rfn: SyncFunction,
 
     /// `on_exit_widget` Rune function.
-    pub on_exit_widget_rfn: Function,
-
-    /// Background loops registered.
-    /// 0 -> The function to be called.
-    /// 1 -> How often (in milliseconds) the function should be called.
-    pub background_loops: &'static Vec<(SyncFunction, u64)>,
+    pub on_exit_widget_rfn: SyncFunction,
 }
 
 /// Script Engine active for this particular instance.
@@ -40,7 +32,7 @@ pub struct ScriptEngine {
     ui_modules: OnceCell<Vec<Module>>,
 
     /// Data collected from the `main` function return data.
-    main_return_data: OnceCell<MainReturnData>,
+    main_return_data: Arc<OnceLock<MainReturnData>>,
 
     /// System Utils instance.
     system_utils: Arc<SystemUtils>,
@@ -58,29 +50,34 @@ unsafe impl Sync for ScriptEngine {}
 impl ScriptEngine {
     /// Builds a new virtual machine from the source `input` and then calls the `main` function on the
     /// source.
-    pub fn run_from_input(&self, input: &str) -> rune::support::Result<()> {
+    pub fn run_from_input(&self, input: &str, self_arc: Arc<Self>) -> rune::support::Result<()> {
         let mut context = Context::with_default_modules()?;
         let mut module = Module::new();
         module.ty::<MainReturnData>()?;
+
+        let main_return_data_clone = Arc::clone(&self.main_return_data);
         module
             .function(
-                "new_runtime_config",
-                |event_arg,
-                 on_button_click_rfn,
-                 on_enter_exit_widget_rfn: (Function, Function),
-                 background_loops| {
-                    MainReturnData {
+                "init_runtime_config",
+                move |event_arg, on_enter_exit_widget_rfn: (Function, Function)| {
+                    main_return_data_clone.get_or_init(|| MainReturnData {
                         event_arg: Box::leak(Box::new(SafeValue(event_arg))),
-                        on_button_click_rfn,
-                        on_enter_widget_rfn: on_enter_exit_widget_rfn.0,
-                        on_exit_widget_rfn: on_enter_exit_widget_rfn.1,
-                        background_loops: Box::leak(Box::new(background_loops)),
-                    }
+                        on_enter_widget_rfn: on_enter_exit_widget_rfn
+                            .0
+                            .into_sync()
+                            .into_result()
+                            .expect("[ERROR] Failed turning on_enter_widget into a SyncFunction!"),
+                        on_exit_widget_rfn: on_enter_exit_widget_rfn
+                            .1
+                            .into_sync()
+                            .into_result()
+                            .expect("[ERROR] Failed turning on_exit_widget into a SyncFunction!"),
+                    });
                 },
             )
             .build()
             .unwrap();
-        context.install(STDExtCrate::build(Arc::clone(&self.system_utils)))?;
+        context.install(STDExtCrate::build(Arc::clone(&self.system_utils), self_arc))?;
         context.install(module)?;
 
         for module in self
@@ -118,21 +115,7 @@ impl ScriptEngine {
             .try_borrow_mut()
             .expect("[ERROR] VM is already being borrowed, cannot borrow as mutable!");
 
-        let result = vm.call(["main"], ())?;
-
-        if let Some(data) = rune::from_value::<Option<MainReturnData>>(result)? {
-            for (func, time) in data.background_loops {
-                gtk::glib::timeout_add(std::time::Duration::from_millis(*time), move || {
-                    func.call::<_, ()>((&data.event_arg.0,))
-                        .into_result()
-                        .expect("[ERROR] Failed calling background loop!");
-                    gtk::glib::ControlFlow::Continue
-                });
-            }
-
-            self.main_return_data.get_or_init(|| data);
-        }
-
+        vm.call(["main"], ())?;
         Ok(())
     }
 
@@ -146,7 +129,7 @@ impl ScriptEngine {
             .expect("[ERROR] VM is already being borrowed, cannot borrow as of now!");
 
         let Ok(ui_pre_init) = vm.lookup_function(["on_ui_pre_init"]) else {
-            println!("[WARN] No on_ui_pre_init function, skipping.");
+            println!("[INFO] No on_ui_pre_init function, skipping.");
             return Ok(());
         };
 
@@ -182,19 +165,31 @@ impl ScriptEngine {
             .is_ok()
     }
 
-    /// Calls the `on_tick` function on the active VM if present.
-    pub fn call_on_button_click(&self, identifier: &str) {
+    /// Starts a new background loop.
+    pub fn start_background_loop(
+        &self,
+        identifier: String,
+        loop_function: SyncFunction,
+        time: u64,
+    ) {
         let Some(main_return_data) = self.main_return_data.get() else {
             eprintln!(
-                "[WARN] No event functions were stored at startup, skipping advanced events!"
+                "[ERROR] No runtime config has been created, background loops cannot be started!"
             );
             return;
         };
 
-        main_return_data
-            .on_button_click_rfn
-            .call::<_, ()>((&main_return_data.event_arg.0, identifier))
-            .into_result()
-            .expect("[ERROR] VM failed to call on_button_click!");
+        let event_arg = main_return_data.event_arg;
+        gtk::glib::timeout_add(std::time::Duration::from_millis(time), move || {
+            if let Err(error) = loop_function.call::<_, ()>((&event_arg.0,)).into_result() {
+                eprintln!(
+                    "[ERROR] Background loop \"{identifier}\" has panicked and been immediately stopped!"
+                );
+                eprintln!("[ERROR] Timeout: {time}, Error: {error}");
+                return gtk::glib::ControlFlow::Break;
+            }
+
+            gtk::glib::ControlFlow::Continue
+        });
     }
 }
