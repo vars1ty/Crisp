@@ -6,7 +6,7 @@ use crate::{config::Config, script::ScriptEngine};
 use fs_crate::FileSystemCrate;
 use gtk::{gdk::Display, prelude::*, Application, ApplicationWindow, CssProvider, Widget};
 use layer_shell_crate::LayerShellCrate;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rune::{runtime::Function, Module, Value};
 use std::{
     collections::HashMap,
@@ -24,8 +24,9 @@ struct SafeGTKWidget(pub Widget);
 // ------- not modify widgets nor access them through other threads.
 unsafe impl Sync for SafeApplicationWindow {}
 unsafe impl Send for SafeGTKWidget {}
+unsafe impl Sync for SafeGTKWidget {}
 
-type UserWidgets = Arc<Mutex<HashMap<String, SafeGTKWidget>>>;
+type UserWidgets = Arc<RwLock<HashMap<String, SafeGTKWidget>>>;
 type CurrentUserWidget = Arc<Mutex<Option<String>>>;
 
 /// UI Builder structure, responsible for holding all functions related to decorating the GTK UI.
@@ -100,7 +101,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_focused_widget", move |identifier: String| {
-                    self.set_focused_widget(identifier)
+                    self.set_focused_widget(identifier);
                 })
                 .build()
                 .unwrap();
@@ -134,7 +135,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_visible", |visible| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_visible(visible)
@@ -144,7 +145,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_opacity", |opacity| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_opacity(opacity)
@@ -154,7 +155,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_hexpand", |expand| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_hexpand(expand)
@@ -164,7 +165,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_vexpand", |expand| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_vexpand(expand)
@@ -174,7 +175,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_gtk_widget_name", |name: String| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_widget_name(&name)
@@ -184,7 +185,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_tooltip_text", |text: Option<String>| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_tooltip_text(text.as_deref())
@@ -194,7 +195,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_tooltip_markup", |text: Option<String>| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_tooltip_markup(text.as_deref())
@@ -204,7 +205,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("get_width", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .width()
@@ -214,7 +215,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("get_width_request", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .width_request()
@@ -224,7 +225,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_width_request", |width| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_width_request(width)
@@ -234,7 +235,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("get_height", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .height()
@@ -244,7 +245,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("get_height_request", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .height_request()
@@ -254,7 +255,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("get_opacity", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .opacity()
@@ -264,7 +265,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("can_focus", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .can_focus()
@@ -274,7 +275,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("is_focus", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .is_focus()
@@ -284,7 +285,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("has_focus", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .has_focus()
@@ -294,7 +295,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("can_target", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .can_target()
@@ -304,7 +305,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("is_visible", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .is_visible()
@@ -314,7 +315,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("is_focusable", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .is_focusable()
@@ -324,7 +325,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("scale_factor", || {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .scale_factor()
@@ -354,7 +355,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_margin_start", move |start| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_margin_start(start)
@@ -364,7 +365,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_margin_end", move |start| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_margin_end(start)
@@ -374,7 +375,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_size_request", move |width, height| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_size_request(width, height)
@@ -384,7 +385,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("update_label_text", move |new_text: String| {
-                    self.try_get_current_gtk_widget_as::<gtk::Label>(&self.user_widgets.lock())
+                    self.try_get_current_gtk_widget_as::<gtk::Label>(&self.user_widgets.read())
                         .expect("[ERROR] The widget you are trying to access is not a label!")
                         .set_text(&new_text);
                 })
@@ -393,7 +394,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("update_button_text", move |new_text: String| {
-                    self.try_get_current_gtk_widget_as::<gtk::Button>(&self.user_widgets.lock())
+                    self.try_get_current_gtk_widget_as::<gtk::Button>(&self.user_widgets.read())
                         .expect("[ERROR] The widget you are trying to access is not a button!")
                         .set_label(&new_text)
                 })
@@ -402,7 +403,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_halign", |align: String| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_halign(match align.as_str() {
@@ -420,7 +421,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_valign", |align: String| {
-                    self.get_current_gtk_widget(&self.user_widgets.lock())
+                    self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
                         .set_valign(match align.as_str() {
@@ -470,7 +471,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("get_slider_value", move || {
-                    self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.lock())
+                    self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.read())
                         .expect("[ERROR] The widget you are trying to access is not a slider!")
                         .value()
                 })
@@ -479,7 +480,7 @@ impl UIBuilder {
 
             gtk_module
                 .function("set_slider_value", move |value| {
-                    self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.lock())
+                    self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.read())
                         .expect("[ERROR] The widget you are trying to access is not a slider!")
                         .set_value(value)
                 })
@@ -501,7 +502,7 @@ impl UIBuilder {
             let widget = gtk::Box::new(gtk::Orientation::Vertical, 0);
             application_window.0.set_child(Some(&widget));
             self.user_widgets
-                .try_lock()
+                .try_write()
                 .expect("[ERROR] user_widgets is locked, cannot add root box widget!")
                 .insert("root".to_owned(), SafeGTKWidget(widget.into()));
             self.set_focused_widget("root".to_owned());
@@ -562,7 +563,7 @@ impl UIBuilder {
             return;
         }
 
-        let Some(mut user_widgets) = self.user_widgets.try_lock() else {
+        let Some(mut user_widgets) = self.user_widgets.try_write() else {
             eprintln!("[ERROR] user_widgets is locked, cannot add widget!");
             return;
         };
@@ -614,7 +615,7 @@ impl UIBuilder {
 
     /// Switches focus from one widget to another.
     fn set_focused_widget(&self, identifier: String) -> bool {
-        let Some(user_widgets) = self.user_widgets.try_lock() else {
+        let Some(user_widgets) = self.user_widgets.try_read() else {
             eprintln!(
                 "[ERROR] user_widgets is locked, cannot swap focus over to \"{identifier}\"!"
             );
@@ -638,7 +639,7 @@ impl UIBuilder {
     /// Attempts to downcast the current widget as `W`, returning it as `&W` if successful.
     /// For example:
     /// ```rust
-    /// let widget = try_get_current_gtk_widget_as::<gtk::Box>(&self.user_widgets.lock())
+    /// let widget = try_get_current_gtk_widget_as::<gtk::Box>(&self.user_widgets.read())
     ///     .expect("Error while trying to get the current widget!")
     ///     .expect("Error while trying to cast widget as gtk::Box!");
     /// ```
@@ -672,7 +673,7 @@ impl UIBuilder {
     /// Checks if the current widget can be casted to the desired widget type.
     /// Shortcut for using `try_get_current_gtk_widget_as::<W>(...).is_ok()`.
     fn can_cast_current_widget_to<W: gtk::prelude::IsA<gtk::Widget>>(&self) -> bool {
-        let Some(user_widgets) = self.user_widgets.try_lock() else {
+        let Some(user_widgets) = self.user_widgets.try_read() else {
             eprintln!("[ERROR] user_widgets is locked, cannot use can_cast_current_widget_to!");
             return false;
         };
