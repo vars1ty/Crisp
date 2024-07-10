@@ -386,7 +386,7 @@ impl UIBuilder {
             gtk_module
                 .function("update_label_text", move |new_text: String| {
                     self.try_get_current_gtk_widget_as::<gtk::Label>(&self.user_widgets.read())
-                        .expect("[ERROR] The widget you are trying to access is not a label!")
+                        .unwrap()
                         .set_text(&new_text);
                 })
                 .build()
@@ -395,7 +395,7 @@ impl UIBuilder {
             gtk_module
                 .function("update_button_text", move |new_text: String| {
                     self.try_get_current_gtk_widget_as::<gtk::Button>(&self.user_widgets.read())
-                        .expect("[ERROR] The widget you are trying to access is not a button!")
+                        .unwrap()
                         .set_label(&new_text)
                 })
                 .build()
@@ -472,7 +472,7 @@ impl UIBuilder {
             gtk_module
                 .function("get_slider_value", move || {
                     self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.read())
-                        .expect("[ERROR] The widget you are trying to access is not a slider!")
+                        .unwrap()
                         .value()
                 })
                 .build()
@@ -481,7 +481,7 @@ impl UIBuilder {
             gtk_module
                 .function("set_slider_value", move |value| {
                     self.try_get_current_gtk_widget_as::<gtk::Scale>(&self.user_widgets.read())
-                        .expect("[ERROR] The widget you are trying to access is not a slider!")
+                        .unwrap()
                         .set_value(value)
                 })
                 .build()
@@ -579,11 +579,14 @@ impl UIBuilder {
             self.connect_enter_exit_events(identifier.to_owned(), &widget);
             box_widget.append(&widget);
             user_widgets.insert(identifier, SafeGTKWidget(widget.into()));
-            drop(user_widgets); // Release Mutex lock.
+            drop(user_widgets); // Release lock.
             return;
         }
 
-        eprintln!("[ERROR] Failed casting widget!");
+        eprintln!(
+            "[ERROR] Failed casting widget as \"{}\"!",
+            std::any::type_name::<W>()
+        );
     }
 
     /// Connects the Enter and Exit events for a widget, into Rune.
@@ -627,6 +630,7 @@ impl UIBuilder {
             return false;
         }
 
+        drop(user_widgets);
         let Some(mut current_user_widget) = self.current_user_widget.try_lock() else {
             eprintln!("[ERROR] current_user_widget is locked, cannot swap focus over to \"{identifier}\"!");
             return false;
@@ -663,7 +667,10 @@ impl UIBuilder {
         };
 
         let Some(casted_widget) = current_user_widget.0.downcast_ref::<W>() else {
-            eprintln!("[ERROR] Failed casting widget to the desired type!");
+            eprintln!(
+                "[ERROR] Failed casting widget as \"{}\"!",
+                std::any::type_name::<W>()
+            );
             return None;
         };
 
@@ -690,7 +697,7 @@ impl UIBuilder {
         user_widgets.get(
             self.current_user_widget
                 .try_lock()
-                .expect("[ERROR] CurrentUserWidget is locked!")
+                .expect("[ERROR] current_user_widget is locked!")
                 .as_ref()?,
         )
     }
