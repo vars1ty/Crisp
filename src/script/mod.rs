@@ -50,7 +50,7 @@ unsafe impl Sync for ScriptEngine {}
 impl ScriptEngine {
     /// Builds a new virtual machine from the source `input` and then calls the `main` function on the
     /// source.
-    pub fn run_from_input(&self, input: &str, self_arc: Arc<Self>) -> rune::support::Result<()> {
+    pub fn run_from_input(self: Arc<Self>, input: &str) -> rune::support::Result<()> {
         let mut context = Context::with_default_modules()?;
         let mut module = Module::new();
         module.ty::<MainReturnData>()?;
@@ -77,7 +77,7 @@ impl ScriptEngine {
             )
             .build()
             .unwrap();
-        context.install(STDExtCrate::build(Arc::clone(&self.system_utils), self_arc))?;
+        context.install(STDExtCrate::build(Arc::clone(&self.system_utils), Arc::clone(&self)))?;
         context.install(module)?;
 
         for module in self

@@ -710,7 +710,7 @@ impl UIBuilder {
     /// Compiles the `script_data` source.
     fn compile_source(script_engine: Arc<ScriptEngine>, script_data: &str) {
         script_engine
-            .run_from_input(script_data, Arc::clone(&script_engine))
+            .run_from_input(script_data)
             .expect("[ERROR] Failed building Script Engine!");
     }
 }
