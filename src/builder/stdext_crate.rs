@@ -61,9 +61,7 @@ impl STDExtCrate {
             .unwrap();
 
         built_crate
-            .function("execute_command", |cmd| {
-                SystemUtils::execute(cmd, false);
-            })
+            .function("execute_command", |cmd| SystemUtils::execute(cmd, false))
             .build()
             .unwrap();
 

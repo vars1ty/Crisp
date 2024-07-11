@@ -406,15 +406,7 @@ impl UIBuilder {
                     self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
-                        .set_halign(match align.as_str() {
-                            "Start" => gtk::Align::Start,
-                            "Center" => gtk::Align::Center,
-                            "End" => gtk::Align::End,
-                            "Fill" => gtk::Align::Fill,
-                            _ => {
-                                panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!")
-                            }
-                        });
+                        .set_halign(self.get_align_from_str(align.as_str()));
                 })
                 .build()
                 .unwrap();
@@ -424,15 +416,7 @@ impl UIBuilder {
                     self.get_current_gtk_widget(&self.user_widgets.read())
                         .expect("[ERROR] Couldn't get the current widget!")
                         .0
-                        .set_valign(match align.as_str() {
-                            "Start" => gtk::Align::Start,
-                            "Center" => gtk::Align::Center,
-                            "End" => gtk::Align::End,
-                            "Fill" => gtk::Align::Fill,
-                            _ => {
-                                panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!")
-                            }
-                        });
+                        .set_valign(self.get_align_from_str(align.as_str()));
                 })
                 .build()
                 .unwrap();
@@ -514,6 +498,19 @@ impl UIBuilder {
         });
 
         app.run();
+    }
+
+    /// Gets the `gtk::Align` value from the `align` string-slice.
+    fn get_align_from_str(&self, align: &str) -> gtk::Align {
+        match align {
+            "Start" => gtk::Align::Start,
+            "Center" => gtk::Align::Center,
+            "End" => gtk::Align::End,
+            "Fill" => gtk::Align::Fill,
+            _ => {
+                panic!("[ERROR] Invalid alignment, use Start, Center, Fill or End!")
+            }
+        }
     }
 
     /// Loads custom CSS from the `STYLESHEET` environment variable, if defined.
