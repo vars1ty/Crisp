@@ -1,3 +1,9 @@
+
+> [!WARNING]  
+> Crisp is **no longer being maintained**. It will continue to work with existing configs.
+>
+> Forks are of course welcome.
+
 # Crisp
 A minimalist GTK Builder system written in Rust, with the goal of being simple and easy to understand.
 
